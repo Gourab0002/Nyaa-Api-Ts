@@ -1,29 +1,42 @@
-import { getTorrentById } from "@/lib/api";
+"use client";
+
+import { useParams } from "next/navigation";
+import { useEffect, useState } from "react";
 import Link from "next/link";
+import { getTorrentById, type FileInfo } from "@/lib/api";
 
-interface TorrentPageProps {
-  params: Promise<{ id: string }>;
-}
+export default function TorrentPage() {
+  const params = useParams();
+  const id = Number(params.id);
 
-export default async function TorrentPage({ params }: TorrentPageProps) {
-  const { id } = await params;
-  const numId = Number(id);
+  const [data, setData] = useState<FileInfo | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  if (isNaN(numId)) {
+  useEffect(() => {
+    if (isNaN(id)) {
+      setError("Invalid torrent ID");
+      setLoading(false);
+      return;
+    }
+    getTorrentById(id)
+      .then(setData)
+      .catch((err) => setError(err.message))
+      .finally(() => setLoading(false));
+  }, [id]);
+
+  if (loading) {
     return (
-      <div className="py-16 text-center text-[var(--danger)]">
-        Invalid torrent ID.
+      <div className="py-16 text-center text-[var(--text-secondary)]">
+        Loading...
       </div>
     );
   }
 
-  let data;
-  try {
-    data = await getTorrentById(numId);
-  } catch {
+  if (error || !data) {
     return (
       <div className="py-16 text-center">
-        <p className="mb-4 text-[var(--danger)]">Torrent not found.</p>
+        <p className="mb-4 text-[var(--danger)]">{error || "Torrent not found."}</p>
         <Link href="/" className="text-[var(--accent)] hover:underline">
           &larr; Back to home
         </Link>
@@ -35,7 +48,6 @@ export default async function TorrentPage({ params }: TorrentPageProps) {
 
   return (
     <div className="space-y-6">
-      {/* Back link */}
       <Link
         href="/"
         className="inline-block text-sm text-[var(--accent)] hover:underline"
@@ -43,10 +55,8 @@ export default async function TorrentPage({ params }: TorrentPageProps) {
         &larr; Back to home
       </Link>
 
-      {/* Title */}
       <h1 className="text-2xl font-bold leading-tight">{torrent.title}</h1>
 
-      {/* Info grid */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <InfoCard label="Category" value={torrent.category} />
         <InfoCard label="Size" value={torrent.size} />
@@ -58,7 +68,6 @@ export default async function TorrentPage({ params }: TorrentPageProps) {
         <InfoCard label="Info Hash" value={infoHash} mono />
       </div>
 
-      {/* Download buttons */}
       <div className="flex flex-wrap gap-3">
         {torrent.file && (
           <a
@@ -78,7 +87,6 @@ export default async function TorrentPage({ params }: TorrentPageProps) {
         )}
       </div>
 
-      {/* Description */}
       {description && (
         <section>
           <h2 className="mb-3 text-lg font-semibold">Description</h2>
@@ -88,7 +96,6 @@ export default async function TorrentPage({ params }: TorrentPageProps) {
         </section>
       )}
 
-      {/* Comments */}
       <section>
         <h2 className="mb-3 text-lg font-semibold">
           Comments ({commentInfo.count})
