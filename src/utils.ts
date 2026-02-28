@@ -1,42 +1,52 @@
-import { ServerRequest } from "worktop/request";
-import { Constants } from "./constants";
-import { QueryParams } from "./models";
+import * as Constants from "./constants";
+import type { QueryParams } from "./models";
 
-export async function checkNyaaUrl(): Promise<string> {
+/**
+ * Checks if nyaa.si is reachable. Falls back to the alt URL.
+ * Results are cached per-request (call once at app level if needed).
+ */
+export async function resolveBaseUrl(): Promise<string> {
   try {
-    const resp = await fetch(Constants.NyaaBaseUrl);
-
-    console.log("NyaaBaseUrl Status:", resp.statusText);
-
-    if (resp.status === 200) {
+    const resp = await fetch(Constants.NyaaBaseUrl, { method: "HEAD" });
+    if (resp.ok) {
       return Constants.NyaaBaseUrl;
-    } else {
-      return Constants.NyaaAltUrl;
     }
-  } catch (error) {
-    console.log("NyaaBaseUrl Error:", error ?? "Something went wrong.");
+    return Constants.NyaaAltUrl;
+  } catch {
     return Constants.NyaaAltUrl;
   }
 }
 
-export function getCategoryID(c: string, s: string): string {
-  if (s === undefined) {
-    return Constants.NyaaEndpoints[c]["all"];
-  } else {
-    return Constants.NyaaEndpoints[c][s];
-  }
+/**
+ * Resolves a category + subcategory pair to a Nyaa category ID string (e.g. "1_2").
+ * Returns null if the category/subcategory combination is invalid.
+ */
+export function getCategoryID(
+  category: string,
+  subcategory: string | undefined
+): string | null {
+  const cat = Constants.NyaaEndpoints[category];
+  if (!cat) return null;
+
+  const sub = subcategory ?? "all";
+  const id = cat[sub];
+  return id ?? null;
 }
 
-export function getSearchParameters(req: ServerRequest): QueryParams {
-  const q: string | null = (req.query.get("q") ?? "").replaceAll(" ", "+");
-  const p: number | null = Number(req.query.get("p"));
-  const o: string | null = req.query.get("o") ?? "";
-  const f: number | null = Number(req.query.get("f"));
-  let s: string | null = req.query.get("s") ?? "";
+/**
+ * Extracts and normalizes search query parameters from a request URL.
+ */
+export function getSearchParameters(url: URL): QueryParams {
+  const q = (url.searchParams.get("q") ?? "").replace(/\s+/g, "+");
+  const p = Number(url.searchParams.get("p")) || 1;
+  const o = url.searchParams.get("o") ?? "";
+  const f = Number(url.searchParams.get("f")) || 0;
+  let s = url.searchParams.get("s") ?? "";
 
-  if (s == "date") {
+  // Nyaa uses "id" internally for date sorting
+  if (s === "date") {
     s = "id";
   }
 
-  return <QueryParams>{ query: q, page: p, order: o, sort: s, filter: f };
+  return { query: q, page: p, order: o, sort: s, filter: f };
 }

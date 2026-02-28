@@ -9,10 +9,10 @@ export interface Torrent {
   size: string;
   file: string;
   link: string;
-  magnet: string;
+  magnet: string | null;
 }
 
-export interface File {
+export interface FileInfo {
   torrent: Torrent;
   description: string;
   submittedBy: string;
@@ -33,9 +33,14 @@ export interface Comments {
 }
 
 export interface QueryParams {
-  query?: string;
-  sort?: string;
-  order?: string;
-  page?: number;
-  filter?: number;
+  query: string;
+  sort: string;
+  order: string;
+  page: number;
+  filter: number;
+}
+
+export interface ApiError {
+  error: string;
+  message: string;
 }

@@ -1,19 +1,24 @@
 {
   "name": "nyaa-api-ts",
-  "version": "1.0.0",
-  "description": "Nyaa Web Scraper using Typescript",
-  "main": "index.js",
-  "scripts": {},
-  "keywords": [],
+  "version": "2.0.0",
+  "description": "Nyaa Web Scraper API using TypeScript and Cloudflare Workers",
+  "main": "src/index.ts",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": ["nyaa", "torrent", "scraper", "api", "cloudflare-workers"],
   "author": "",
   "license": "ISC",
   "devDependencies": {
-    "@types/node": "^18.11.17",
-    "typescript": "^4.9.4"
+    "@cloudflare/workers-types": "^4.20240208.0",
+    "@types/node": "^20.11.0",
+    "typescript": "^5.3.3",
+    "wrangler": "^3.28.0"
   },
   "dependencies": {
     "cheerio": "^1.0.0-rc.12",
-    "ts-node": "^10.9.1",
-    "worktop": "^0.7.3"
+    "hono": "^4.0.0"
   }
 }

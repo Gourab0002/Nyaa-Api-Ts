@@ -1,56 +1,118 @@
-import { Handler } from "worktop";
+import { Hono } from "hono";
 import * as Scrapers from "./scrapers";
-import { Constants } from "./constants";
 import * as Utils from "./utils";
+import type { ApiError } from "./models";
 
-const baseUrl = Constants.NyaaAltUrl;
+const app = new Hono();
 
-export class Handlers {
-  static Ping: Handler = function (_, res) {
-    res.send(200, "Nyaa API v2 // Alive");
-  };
+app.get("/", (c) => {
+  return c.json({ status: "ok", message: "Nyaa API v2" });
+});
 
-  static GetInfoFromID: Handler = async function (req, res) {
-    try {
-      const id = req.params.id;
-      const searchUrl = baseUrl + "/view/" + id;
+app.get("/id/:id", async (c) => {
+  const id = c.req.param("id");
 
-      await Scrapers.fileInfoScraper(res, searchUrl);
-    } catch (error) {
-      res.send(404, "Not Found");
+  if (!/^\d+$/.test(id)) {
+    return c.json<ApiError>(
+      { error: "Bad Request", message: "ID must be a number" },
+      400
+    );
+  }
+
+  try {
+    const baseUrl = await Utils.resolveBaseUrl();
+    const searchUrl = `${baseUrl}/view/${id}`;
+    const result = await Scrapers.fileInfoScraper(searchUrl);
+
+    if (!result) {
+      return c.json<ApiError>(
+        { error: "Not Found", message: `Torrent with ID ${id} not found` },
+        404
+      );
     }
-  };
 
-  static GetUserUploads: Handler = async function (req, res) {
-    try {
-      const username = req.params.username;
-      const queryParams = Utils.getSearchParameters(req);
+    return c.json(result);
+  } catch (error) {
+    console.error("Error fetching torrent info:", error);
+    return c.json<ApiError>(
+      { error: "Internal Server Error", message: "Failed to fetch torrent info" },
+      500
+    );
+  }
+});
 
-      const searchUrl = `${baseUrl}/user/${username}?q=${queryParams.query.trim()}&p=${
-        queryParams.page
-      }&s=${queryParams.sort}&o=${queryParams.order}&f=${queryParams.filter}`;
+app.get("/user/:username", async (c) => {
+  const username = c.req.param("username");
 
-      await Scrapers.scrapeNyaa(res, searchUrl);
-    } catch (error) {
-      res.send(404, "Not Found");
+  try {
+    const baseUrl = await Utils.resolveBaseUrl();
+    const queryParams = Utils.getSearchParameters(new URL(c.req.url));
+
+    const searchUrl =
+      `${baseUrl}/user/${encodeURIComponent(username)}` +
+      `?q=${queryParams.query.trim()}&p=${queryParams.page}` +
+      `&s=${queryParams.sort}&o=${queryParams.order}&f=${queryParams.filter}`;
+
+    const result = await Scrapers.scrapeNyaa(searchUrl);
+
+    if (!result) {
+      return c.json<ApiError>(
+        { error: "Not Found", message: `User "${username}" not found or has no uploads` },
+        404
+      );
     }
-  };
 
-  static GetCategoryTorrents: Handler = async function (req, res) {
-    try {
-      const cat = req.params.category;
-      const subCat = req.params.subcategory;
+    return c.json(result);
+  } catch (error) {
+    console.error("Error fetching user uploads:", error);
+    return c.json<ApiError>(
+      { error: "Internal Server Error", message: "Failed to fetch user uploads" },
+      500
+    );
+  }
+});
 
-      const category = Utils.getCategoryID(cat, subCat);
-      const queryParams = Utils.getSearchParameters(req);
+app.get("/:category/:subcategory?", async (c) => {
+  const cat = c.req.param("category");
+  const subCat = c.req.param("subcategory");
 
-      const searchUrl = `${baseUrl}?q=${queryParams.query.trim()}&c=${category}&p=${
-        queryParams.page
-      }&s=${queryParams.sort}&o=${queryParams.order}&f=${queryParams.filter}`;
+  const category = Utils.getCategoryID(cat, subCat);
+  if (!category) {
+    const detail = subCat
+      ? `Category "${cat}/${subCat}" is not valid`
+      : `Category "${cat}" is not valid`;
+    return c.json<ApiError>(
+      { error: "Bad Request", message: detail },
+      400
+    );
+  }
 
-      await Scrapers.scrapeNyaa(res, searchUrl);
-    } catch (error) {
-      res.send(404, "Not Found");
+  try {
+    const baseUrl = await Utils.resolveBaseUrl();
+    const queryParams = Utils.getSearchParameters(new URL(c.req.url));
+
+    const searchUrl =
+      `${baseUrl}?q=${queryParams.query.trim()}&c=${category}` +
+      `&p=${queryParams.page}&s=${queryParams.sort}` +
+      `&o=${queryParams.order}&f=${queryParams.filter}`;
+
+    const result = await Scrapers.scrapeNyaa(searchUrl);
+
+    if (!result) {
+      return c.json<ApiError>(
+        { error: "Not Found", message: "No results found" },
+        404
+      );
     }
-  };
-}
+
+    return c.json(result);
+  } catch (error) {
+    console.error("Error fetching category torrents:", error);
+    return c.json<ApiError>(
+      { error: "Internal Server Error", message: "Failed to fetch torrents" },
+      500
+    );
+  }
+});
+
+export default app;
