@@ -1,10 +1,14 @@
 import { Hono } from "hono";
+import { cors } from "hono/cors";
 import * as Scrapers from "./scrapers";
 import * as Utils from "./utils";
 import * as Constants from "./constants";
 import type { ApiError } from "./models";
 
 const app = new Hono();
+
+/** Enable CORS for all origins so browser clients can use the API */
+app.use("*", cors());
 
 /** Default cache duration for responses (5 minutes) */
 const CACHE_MAX_AGE = 300;
@@ -43,7 +47,7 @@ app.get("/id/:id", async (c) => {
   try {
     const baseUrl = await Utils.resolveBaseUrl();
     const searchUrl = `${baseUrl}/view/${id}`;
-    const result = await Scrapers.fileInfoScraper(searchUrl);
+    const result = await Scrapers.fileInfoScraper(searchUrl, baseUrl);
 
     if (!result) {
       return c.json<ApiError>(
@@ -69,11 +73,11 @@ app.get("/search", async (c) => {
     const queryParams = Utils.getSearchParameters(new URL(c.req.url));
 
     const searchUrl =
-      `${baseUrl}?q=${queryParams.query.trim()}&c=0_0` +
-      `&p=${queryParams.page}&s=${queryParams.sort}` +
-      `&o=${queryParams.order}&f=${queryParams.filter}`;
+      `${baseUrl}?q=${encodeURIComponent(queryParams.query.trim())}&c=0_0` +
+      `&p=${queryParams.page}&s=${encodeURIComponent(queryParams.sort)}` +
+      `&o=${encodeURIComponent(queryParams.order)}&f=${queryParams.filter}`;
 
-    const result = await Scrapers.scrapeNyaa(searchUrl, queryParams.page);
+    const result = await Scrapers.scrapeNyaa(searchUrl, queryParams.page, baseUrl);
 
     if (!result) {
       return c.json<ApiError>(
@@ -102,10 +106,10 @@ app.get("/user/:username", async (c) => {
 
     const searchUrl =
       `${baseUrl}/user/${encodeURIComponent(username)}` +
-      `?q=${queryParams.query.trim()}&p=${queryParams.page}` +
-      `&s=${queryParams.sort}&o=${queryParams.order}&f=${queryParams.filter}`;
+      `?q=${encodeURIComponent(queryParams.query.trim())}&p=${queryParams.page}` +
+      `&s=${encodeURIComponent(queryParams.sort)}&o=${encodeURIComponent(queryParams.order)}&f=${queryParams.filter}`;
 
-    const result = await Scrapers.scrapeNyaa(searchUrl, queryParams.page);
+    const result = await Scrapers.scrapeNyaa(searchUrl, queryParams.page, baseUrl);
 
     if (!result) {
       return c.json<ApiError>(
@@ -145,11 +149,11 @@ app.get("/:category/:subcategory?", async (c) => {
     const queryParams = Utils.getSearchParameters(new URL(c.req.url));
 
     const searchUrl =
-      `${baseUrl}?q=${queryParams.query.trim()}&c=${category}` +
-      `&p=${queryParams.page}&s=${queryParams.sort}` +
-      `&o=${queryParams.order}&f=${queryParams.filter}`;
+      `${baseUrl}?q=${encodeURIComponent(queryParams.query.trim())}&c=${category}` +
+      `&p=${queryParams.page}&s=${encodeURIComponent(queryParams.sort)}` +
+      `&o=${encodeURIComponent(queryParams.order)}&f=${queryParams.filter}`;
 
-    const result = await Scrapers.scrapeNyaa(searchUrl, queryParams.page);
+    const result = await Scrapers.scrapeNyaa(searchUrl, queryParams.page, baseUrl);
 
     if (!result) {
       return c.json<ApiError>(

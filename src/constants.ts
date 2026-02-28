@@ -1,8 +1,11 @@
 export const NyaaBaseUrl = "https://nyaa.si";
 export const NyaaAltUrl = "https://nyaa.land";
 
-export const DefaultProfilePic =
-  "https://nyaa.si/static/img/avatar/default.png";
+/** Default avatar path (relative, combined with the resolved base URL at runtime) */
+export const DefaultProfilePicPath = "/static/img/avatar/default.png";
+
+/** Fallback absolute URL used when no base URL context is available */
+export const DefaultProfilePic = NyaaBaseUrl + DefaultProfilePicPath;
 
 export const NyaaEndpoints: Record<string, Record<string, string>> = {
   all: {

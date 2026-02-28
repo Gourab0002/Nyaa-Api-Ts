@@ -7,8 +7,8 @@ export interface Torrent {
   leechers: number;
   completed: number;
   size: string;
-  file: string;
-  link: string;
+  file: string | null;
+  link: string | null;
   magnet: string | null;
 }
 

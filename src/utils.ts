@@ -1,7 +1,15 @@
 import * as Constants from "./constants";
 import type { QueryParams } from "./models";
 
-/** Cached base URL and its expiry timestamp */
+/**
+ * Cached base URL and its expiry timestamp.
+ *
+ * NOTE: In Cloudflare Workers, module-level state persists within a single
+ * isolate but is NOT shared across isolates or guaranteed to survive between
+ * requests. This cache reduces redundant HEAD requests when the same isolate
+ * handles multiple requests in quick succession, but it is not a reliable
+ * long-term cache.
+ */
 let cachedBaseUrl: string | null = null;
 let cacheExpiry = 0;
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
@@ -51,9 +59,11 @@ export function getCategoryID(
 
 /**
  * Extracts and normalizes search query parameters from a request URL.
+ * Values are returned as-is; URL encoding should be handled by the caller
+ * when constructing upstream URLs.
  */
 export function getSearchParameters(url: URL): QueryParams {
-  const q = (url.searchParams.get("q") ?? "").replace(/\s+/g, "+");
+  const q = url.searchParams.get("q") ?? "";
   const p = Number(url.searchParams.get("p")) || 1;
   const o = url.searchParams.get("o") ?? "";
   const f = Number(url.searchParams.get("f")) || 0;
