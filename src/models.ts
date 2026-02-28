@@ -12,6 +12,16 @@ export interface Torrent {
   magnet: string | null;
 }
 
+export interface TorrentList {
+  torrents: Torrent[];
+  pagination: PaginationInfo;
+}
+
+export interface PaginationInfo {
+  currentPage: number;
+  hasNextPage: boolean;
+}
+
 export interface FileInfo {
   torrent: Torrent;
   description: string;

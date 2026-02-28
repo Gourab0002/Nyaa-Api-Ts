@@ -1,6 +1,7 @@
 import * as Constants from "./constants";
 import * as cheerio from "cheerio";
 import type * as Models from "./models";
+import { FETCH_TIMEOUT_MS } from "./utils";
 
 /**
  * Scrapes detailed file/torrent info from a Nyaa view page.
@@ -8,7 +9,9 @@ import type * as Models from "./models";
 export async function fileInfoScraper(
   url: string
 ): Promise<Models.FileInfo | null> {
-  const response = await fetch(url);
+  const response = await fetch(url, {
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+  });
 
   if (!response.ok) {
     return null;
@@ -113,11 +116,15 @@ export async function fileInfoScraper(
 
 /**
  * Scrapes the torrent listing table from a Nyaa search/user page.
+ * Returns both the torrent list and pagination info.
  */
 export async function scrapeNyaa(
-  url: string
-): Promise<Models.Torrent[] | null> {
-  const response = await fetch(url);
+  url: string,
+  currentPage: number
+): Promise<Models.TorrentList | null> {
+  const response = await fetch(url, {
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+  });
 
   if (!response.ok) {
     return null;
@@ -154,7 +161,16 @@ export async function scrapeNyaa(
     torrents.push(torrent);
   });
 
-  return torrents;
+  // Check if there's a "next" page link in the pagination
+  const hasNextPage = $("ul.pagination li.next:not(.disabled)").length > 0;
+
+  return {
+    torrents,
+    pagination: {
+      currentPage,
+      hasNextPage,
+    },
+  };
 }
 
 /** Safely parse a string to number, returning 0 for NaN */

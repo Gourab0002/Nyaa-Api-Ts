@@ -1,12 +1,33 @@
 import { Hono } from "hono";
 import * as Scrapers from "./scrapers";
 import * as Utils from "./utils";
+import * as Constants from "./constants";
 import type { ApiError } from "./models";
 
 const app = new Hono();
 
+/** Default cache duration for responses (5 minutes) */
+const CACHE_MAX_AGE = 300;
+
+/** Sets standard cache headers on the response */
+function setCacheHeaders(c: { header: (name: string, value: string) => void }) {
+  c.header("Cache-Control", `public, max-age=${CACHE_MAX_AGE}`);
+}
+
 app.get("/", (c) => {
-  return c.json({ status: "ok", message: "Nyaa API v2" });
+  return c.json({
+    status: "ok",
+    message: "Nyaa API v2",
+    endpoints: {
+      ping: "GET /",
+      torrentById: "GET /id/:id",
+      userUploads: "GET /user/:username",
+      search: "GET /search?q=query&p=1&s=seeders&o=desc&f=0",
+      category: "GET /:category",
+      categoryWithSub: "GET /:category/:subcategory",
+    },
+    categories: Constants.ValidCategories,
+  });
 });
 
 app.get("/id/:id", async (c) => {
@@ -31,11 +52,42 @@ app.get("/id/:id", async (c) => {
       );
     }
 
+    setCacheHeaders(c);
     return c.json(result);
   } catch (error) {
     console.error("Error fetching torrent info:", error);
     return c.json<ApiError>(
       { error: "Internal Server Error", message: "Failed to fetch torrent info" },
+      500
+    );
+  }
+});
+
+app.get("/search", async (c) => {
+  try {
+    const baseUrl = await Utils.resolveBaseUrl();
+    const queryParams = Utils.getSearchParameters(new URL(c.req.url));
+
+    const searchUrl =
+      `${baseUrl}?q=${queryParams.query.trim()}&c=0_0` +
+      `&p=${queryParams.page}&s=${queryParams.sort}` +
+      `&o=${queryParams.order}&f=${queryParams.filter}`;
+
+    const result = await Scrapers.scrapeNyaa(searchUrl, queryParams.page);
+
+    if (!result) {
+      return c.json<ApiError>(
+        { error: "Not Found", message: "No results found" },
+        404
+      );
+    }
+
+    setCacheHeaders(c);
+    return c.json(result);
+  } catch (error) {
+    console.error("Error searching torrents:", error);
+    return c.json<ApiError>(
+      { error: "Internal Server Error", message: "Failed to search torrents" },
       500
     );
   }
@@ -53,7 +105,7 @@ app.get("/user/:username", async (c) => {
       `?q=${queryParams.query.trim()}&p=${queryParams.page}` +
       `&s=${queryParams.sort}&o=${queryParams.order}&f=${queryParams.filter}`;
 
-    const result = await Scrapers.scrapeNyaa(searchUrl);
+    const result = await Scrapers.scrapeNyaa(searchUrl, queryParams.page);
 
     if (!result) {
       return c.json<ApiError>(
@@ -62,6 +114,7 @@ app.get("/user/:username", async (c) => {
       );
     }
 
+    setCacheHeaders(c);
     return c.json(result);
   } catch (error) {
     console.error("Error fetching user uploads:", error);
@@ -96,7 +149,7 @@ app.get("/:category/:subcategory?", async (c) => {
       `&p=${queryParams.page}&s=${queryParams.sort}` +
       `&o=${queryParams.order}&f=${queryParams.filter}`;
 
-    const result = await Scrapers.scrapeNyaa(searchUrl);
+    const result = await Scrapers.scrapeNyaa(searchUrl, queryParams.page);
 
     if (!result) {
       return c.json<ApiError>(
@@ -105,6 +158,7 @@ app.get("/:category/:subcategory?", async (c) => {
       );
     }
 
+    setCacheHeaders(c);
     return c.json(result);
   } catch (error) {
     console.error("Error fetching category torrents:", error);

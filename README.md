@@ -1,82 +1,152 @@
-# Nyaa-Api-Ts
+# Nyaa API (TypeScript)
 
-[![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/Yash-Garg/Nyaa-Api-Ts)
+A lightweight web scraper API for [nyaa.si](https://nyaa.si), built with [Hono](https://hono.dev/) and [Cheerio](https://cheerio.js.org/). Runs on Cloudflare Workers, Deno, Bun, or Node.js.
 
-This API is an **Unofficial Nyaa API** rewritten in Typescript.
+## Endpoints
 
-Previous Go API - [Yash-Garg/Nyaa-Api-Go](https://github.com/Yash-Garg/Nyaa-Api-Go)
+### `GET /`
 
-## Usage
+Health check and API info. Returns available endpoints and valid categories.
 
-- `username` and `id` are required parameters if using `/user/{username}` and `/id/{id}` endpoints.
+### `GET /id/:id`
 
-- If no parameters are specified in other endpoints like `/anime`, `/manga`, etc. It will return the latest uploaded torrents in the respective category.
+Get detailed info for a specific torrent by its numeric ID.
 
-- For Filters, input `filter=1` for _No Remakes_ and `filter=2` for _Trusted Only_.
+**Example:** `GET /id/1234567`
 
-- #### Available Endpoints
+**Response:** Torrent details including title, magnet link, file links, seeders/leechers, comments, description, and info hash.
 
-  | **Arguments**      | **Description**                                       |
-  | ------------------ | ----------------------------------------------------- |
-  | `q` **(Optional)** | Search query.                                         |
-  | `s` **(Optional)** | Sorting parameter                                     |
-  | `p` **(Optional)** | Page number                                           |
-  | `f` **(Optional)** | Filter option                                         |
-  | `o` **(Optional)** | Order of sorting. Defaults to **_Descending order_**. |
+### `GET /search`
 
-  - **Endpoints**
-    | **Category** | **Endpoint** |
-    |---------|---------|
-    | All | `/all` |
-    | Anime | `/anime` |
-    | Manga | `/manga` |
-    | Audio | `/audio` |
-    | Pictures | `/pictures` |
-    | Live Action | `/live_action` |
-    | Software | `/software` |
-    | ID | `/id` |
-    | User | `/user` |
+Search across all categories.
 
-  - **Sub-Categories** (Not applicable for `/user` and `/id`)
-    | **Category** | **Sub-Category** |
-    |------|------|
-    | Anime | `/amv`, `/eng`, `/non-eng`, `/raw` |
-    | Manga | `/eng`, `/non-eng`, `/raw` |
-    | Audio | `/lossy`, `/lossless` |
-    | Pictures | `/photos`, `/graphics` |
-    | Live Action | `/promo`, `/eng`, `/non-eng`, `/raw` |
-    | Software | `/application`, `/games` |
+| Parameter | Type   | Default | Description                                      |
+|-----------|--------|---------|--------------------------------------------------|
+| `q`       | string | `""`    | Search query                                     |
+| `p`       | number | `1`     | Page number                                      |
+| `s`       | string | `""`    | Sort by: `date`, `seeders`, `leechers`, `size`, `downloads` |
+| `o`       | string | `""`    | Order: `asc` or `desc`                           |
+| `f`       | number | `0`     | Filter: `0` (none), `1` (no remakes), `2` (trusted only) |
 
-  - **Sorting Parameters**
-    | **Arguments** | **Methods** |
-    | ---- | ---- |
-    | Sort | `size`, `seeders`, `leechers`, `date`, `downloads` |
-    | Order | `asc`, `desc` |
+**Example:** `GET /search?q=one+piece&s=seeders&o=desc&p=1`
 
-- #### Search using ID
+### `GET /user/:username`
 
-  - `https://nyaa-api-ts.yashg.workers.dev/id/{id}`
+Get uploads by a specific user. Supports the same query parameters as `/search`.
 
-- #### Search using category
+**Example:** `GET /user/subsplease?q=&s=date&o=desc`
 
-  - `https://nyaa-api-ts.yashg.workers.dev/{category}?q={search_query}`
-  - `https://nyaa-api-ts.yashg.workers.dev/{category}?q={search_query}&s={sorting_parameter}`
-  - `https://nyaa-api-ts.yashg.workers.dev/{category}?q={search_query}&s={sorting_parameter}&p={page_number}`
-  - `https://nyaa-api-ts.yashg.workers.dev/{category}?q={search_query}&s={sorting_parameter}&p={page_number}&o={order}`
-  - `https://nyaa-api-ts.yashg.workers.dev/{category}?q={search_query}&s={sorting_parameter}&p={page_number}&o={order}&f={filter}`
+### `GET /:category`
 
-- #### Search using sub category
+Browse a top-level category. Returns all subcategories.
 
-  - `https://nyaa-api-ts.yashg.workers.dev/{category}/{sub_category}?q={search_query}`
-  - `https://nyaa-api-ts.yashg.workers.dev/{category}/{sub_category}?q={search_query}&s={sorting_parameter}`
-  - `https://nyaa-api-ts.yashg.workers.dev/{category}/{sub_category}?q={search_query}&s={sorting_parameter}&p={page_number}`
-  - `https://nyaa-api-ts.yashg.workers.dev/{category}/{sub_category}?q={search_query}&s={sorting_parameter}&p={page_number}&o={order}`
-  - `https://nyaa-api-ts.yashg.workers.dev/{category}/{sub_category}?q={search_query}&s={sorting_parameter}&p={page_number}&o={order}&f={filter}`
+**Valid categories:** `all`, `anime`, `audio`, `manga`, `live_action`, `pictures`, `software`
 
-- #### Search using username
-  - `https://nyaa-api-ts.yashg.workers.dev/user/{username}`
-  - `https://nyaa-api-ts.yashg.workers.dev/user/{username}?q={search_query}`
-  - `https://nyaa-api-ts.yashg.workers.dev/user/{username}?q={search_query}&s={sorting_parameter}`
-  - `https://nyaa-api-ts.yashg.workers.dev/user/{username}?q={search_query}&s={sorting_parameter}&p={page_number}`
-  - `https://nyaa-api-ts.yashg.workers.dev/user/{username}?q={search_query}&s={sorting_parameter}&p={page_number}&o={order}`
-  - `https://nyaa-api-ts.yashg.workers.dev/user/{username}?q={search_query}&s={sorting_parameter}&p={page_number}&o={order}&f={filter}`
+**Example:** `GET /anime?s=date&o=desc`
+
+### `GET /:category/:subcategory`
+
+Browse a specific subcategory.
+
+| Category      | Subcategories                          |
+|---------------|----------------------------------------|
+| `anime`       | `amv`, `eng`, `non-eng`, `raw`         |
+| `audio`       | `lossless`, `lossy`                    |
+| `manga`       | `eng`, `non-eng`, `raw`               |
+| `live_action`  | `eng`, `promo`, `non-eng`, `raw`      |
+| `pictures`    | `graphics`, `photos`                   |
+| `software`    | `applications`, `games`                |
+
+**Example:** `GET /anime/eng?q=naruto&p=2`
+
+## Response Format
+
+### Torrent List (search, category, user endpoints)
+
+```json
+{
+  "torrents": [
+    {
+      "id": 1234567,
+      "title": "Example Torrent",
+      "category": "Anime - English-translated",
+      "uploaded": "2024-01-15 12:00",
+      "seeders": 150,
+      "leechers": 10,
+      "completed": 5000,
+      "size": "1.4 GiB",
+      "file": "https://nyaa.si/download/1234567.torrent",
+      "link": "https://nyaa.si/view/1234567",
+      "magnet": "magnet:?xt=urn:btih:..."
+    }
+  ],
+  "pagination": {
+    "currentPage": 1,
+    "hasNextPage": true
+  }
+}
+```
+
+### Torrent Detail (`/id/:id`)
+
+```json
+{
+  "torrent": { ... },
+  "description": "Full torrent description text",
+  "submittedBy": "username",
+  "infoHash": "abc123...",
+  "commentInfo": {
+    "count": 5,
+    "comments": [
+      {
+        "name": "user123",
+        "content": "Thanks for the upload!",
+        "image": "https://nyaa.si/static/img/avatar/default.png",
+        "timestamp": "2024-01-15T12:00:00Z"
+      }
+    ]
+  }
+}
+```
+
+### Error Response
+
+```json
+{
+  "error": "Bad Request",
+  "message": "Category \"invalid\" is not valid"
+}
+```
+
+## Deployment
+
+### Cloudflare Workers
+
+```bash
+npm install
+npm run deploy
+```
+
+### Deno
+
+```bash
+deno run --allow-net src/index.ts
+```
+
+### Local Development
+
+```bash
+npm install
+npm run dev
+# API available at http://localhost:3000
+```
+
+## Tech Stack
+
+- **[Hono](https://hono.dev/)** - Lightweight, multi-runtime web framework
+- **[Cheerio](https://cheerio.js.org/)** - HTML parsing and scraping
+- **TypeScript** - Strict mode enabled
+
+## License
+
+ISC

@@ -1,20 +1,36 @@
 import * as Constants from "./constants";
 import type { QueryParams } from "./models";
 
+/** Cached base URL and its expiry timestamp */
+let cachedBaseUrl: string | null = null;
+let cacheExpiry = 0;
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+/** Default timeout for upstream fetch calls (ms) */
+export const FETCH_TIMEOUT_MS = 10_000;
+
 /**
- * Checks if nyaa.si is reachable. Falls back to the alt URL.
- * Results are cached per-request (call once at app level if needed).
+ * Resolves the best available Nyaa base URL.
+ * Caches the result for 5 minutes to avoid repeated HEAD requests.
  */
 export async function resolveBaseUrl(): Promise<string> {
-  try {
-    const resp = await fetch(Constants.NyaaBaseUrl, { method: "HEAD" });
-    if (resp.ok) {
-      return Constants.NyaaBaseUrl;
-    }
-    return Constants.NyaaAltUrl;
-  } catch {
-    return Constants.NyaaAltUrl;
+  const now = Date.now();
+  if (cachedBaseUrl && now < cacheExpiry) {
+    return cachedBaseUrl;
   }
+
+  try {
+    const resp = await fetch(Constants.NyaaBaseUrl, {
+      method: "HEAD",
+      signal: AbortSignal.timeout(5000),
+    });
+    cachedBaseUrl = resp.ok ? Constants.NyaaBaseUrl : Constants.NyaaAltUrl;
+  } catch {
+    cachedBaseUrl = Constants.NyaaAltUrl;
+  }
+
+  cacheExpiry = now + CACHE_TTL_MS;
+  return cachedBaseUrl;
 }
 
 /**
