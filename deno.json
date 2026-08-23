@@ -1,0 +1,14 @@
+{
+  "imports": {
+    "hono": "npm:hono@^4.12.21",
+    "hono/cors": "npm:hono@^4.12.21/cors",
+    "cheerio": "npm:cheerio@^1.0.0"
+  },
+  "compilerOptions": {
+    "lib": ["deno.window", "ES2021"],
+    "strict": true
+  },
+  "tasks": {
+    "start": "deno run --allow-net --allow-env src/index.ts"
+  }
+}

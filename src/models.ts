@@ -7,22 +7,12 @@ export interface Torrent {
   leechers: number;
   completed: number;
   size: string;
-  file: string | null;
-  link: string | null;
-  magnet: string | null;
+  file: string;
+  link: string;
+  magnet: string;
 }
 
-export interface TorrentList {
-  torrents: Torrent[];
-  pagination: PaginationInfo;
-}
-
-export interface PaginationInfo {
-  currentPage: number;
-  hasNextPage: boolean;
-}
-
-export interface FileInfo {
+export interface File {
   torrent: Torrent;
   description: string;
   submittedBy: string;
@@ -50,7 +40,20 @@ export interface QueryParams {
   filter: number;
 }
 
-export interface ApiError {
-  error: string;
-  message: string;
+export interface FetchResult {
+  origin: string;
+  html: string;
+  status: number;
+}
+
+export type ErrorStatus = 400 | 404 | 502;
+
+export class HttpError extends Error {
+  status: ErrorStatus;
+
+  constructor(status: ErrorStatus, message: string) {
+    super(message);
+    this.name = "HttpError";
+    this.status = status;
+  }
 }

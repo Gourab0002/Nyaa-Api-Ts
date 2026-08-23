@@ -1,81 +1,104 @@
-import * as Constants from "./constants";
+import { Context } from "hono";
 import * as cheerio from "cheerio";
-import type * as Models from "./models";
-import { FETCH_TIMEOUT_MS } from "./utils";
+import { Constants } from "./constants.ts";
+import * as Models from "./models.ts";
+import {
+  extractViewId,
+  fetchNyaa,
+  resolveUrl,
+  toCount,
+} from "./utils.ts";
 
-/**
- * Scrapes detailed file/torrent info from a Nyaa view page.
- * @param url - The full URL to fetch (already resolved to an available domain)
- * @param baseUrl - The resolved base URL to use when constructing torrent links
- */
-export async function fileInfoScraper(
-  url: string,
-  baseUrl: string
-): Promise<Models.FileInfo | null> {
-  const response = await fetch(url, {
-    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+function labeledValue(
+  $: ReturnType<typeof cheerio.load>,
+  scope: ReturnType<ReturnType<typeof cheerio.load>>,
+  label: string
+): string {
+  const match = scope.find("div.row > div").filter((_, el) => {
+    return $(el).text().replace(/\s+/g, " ").trim() === label;
+  });
+  return match.first().next().text().replace(/\s+/g, " ").trim();
+}
+
+export function parseTorrentList(
+  html: string,
+  origin: string
+): Models.Torrent[] {
+  const $ = cheerio.load(html);
+  const torrents: Models.Torrent[] = [];
+
+  let rows = $("table.torrent-list tbody tr");
+  if (!rows.length) {
+    rows = $("tbody tr");
+  }
+
+  rows.each((_, selection) => {
+    const row = $(selection);
+    const titleLink = row
+      .find('a[href^="/view/"]')
+      .not(".comments")
+      .last();
+    const torrentPath = titleLink.attr("href") ?? "";
+    const id = extractViewId(torrentPath);
+
+    if (!id) {
+      return;
+    }
+
+    const downloadHref = row.find('a[href^="/download/"]').attr("href");
+    const magnetHref = row.find('a[href^="magnet:"]').attr("href");
+    const cells = row.find("td");
+    const last = cells.length;
+
+    torrents.push({
+      id,
+      title: titleLink.text().trim(),
+      link: resolveUrl(origin, torrentPath),
+      file: resolveUrl(origin, downloadHref),
+      magnet: magnetHref ?? "",
+      category: row.find("td:first-child a").attr("title") ?? "",
+      size: last >= 5 ? cells.eq(last - 5).text().trim() : "",
+      uploaded: last >= 4 ? cells.eq(last - 4).text().trim() : "",
+      seeders: last >= 3 ? toCount(cells.eq(last - 3).text()) : 0,
+      leechers: last >= 2 ? toCount(cells.eq(last - 2).text()) : 0,
+      completed: last >= 1 ? toCount(cells.eq(last - 1).text()) : 0,
+    });
   });
 
-  if (!response.ok) {
+  return torrents;
+}
+
+export function parseFileInfo(
+  html: string,
+  origin: string,
+  fileId: number
+): Models.File | null {
+  const $ = cheerio.load(html);
+  const container = $("body div.container").last();
+
+  if (!container.length) {
     return null;
   }
 
-  const responseBody = await response.text();
-  const $ = cheerio.load(responseBody);
-  const container = $("body div.container").last();
-
-  const fileIdMatch = url.match(/\/view\/(\d+)/);
-  const fileId = fileIdMatch ? Number(fileIdMatch[1]) : 0;
-
-  const fileHref = container.find("div.panel-footer a").attr("href");
-  const magnetHref = container
-    .find("div.panel-footer a:nth-child(2)")
-    .attr("href");
-
-  const torrentData: Models.Torrent = {
-    title: container.find("h3.panel-title").first().text().trim(),
-    file: fileHref ? baseUrl + fileHref : null,
-    link: `${baseUrl}/view/${fileId}`,
-    id: fileId,
-    magnet: magnetHref ?? null,
-    size: container
-      .find("div.panel-body div.row:nth-child(4) .col-md-5:nth-child(2)")
-      .text()
-      .trim(),
-    category: container
-      .find("div.panel-body div.row:nth-child(1) .col-md-5:nth-child(2)")
-      .text()
-      .trim(),
-    uploaded: container
-      .find("div.panel-body div.row:nth-child(1) .col-md-5:nth-child(4)")
-      .text()
-      .trim(),
-    seeders: safeNumber(
-      container
-        .find("div.panel-body div.row:nth-child(2) .col-md-5:nth-child(4)")
-        .text()
-        .trim()
-    ),
-    leechers: safeNumber(
-      container
-        .find("div.panel-body div.row:nth-child(3) .col-md-5:nth-child(4)")
-        .text()
-        .trim()
-    ),
-    completed: safeNumber(
-      container
-        .find("div.panel-body div.row:nth-child(4) .col-md-5:nth-child(4)")
-        .text()
-        .trim()
-    ),
-  };
-
-  const commentText = container
-    .find("div#comments h3.panel-title")
+  const title = container
+    .find(".panel-heading h3.panel-title")
+    .first()
     .text()
-    .split("-")
-    .at(-1);
-  const commentCount = safeNumber(commentText ?? "0");
+    .trim();
+
+  if (!title) {
+    return null;
+  }
+
+  const downloadHref = container.find('a[href^="/download/"]').attr("href");
+  const magnetHref = container.find('a[href^="magnet:"]').attr("href") ?? "";
+  const infoHash = container.find("kbd").first().text().trim();
+  const commentTitle = container
+    .find("div#comments h3.panel-title")
+    .first()
+    .text();
+  const commentParts = commentTitle.split("-");
+  const commentCount = toCount(commentParts[commentParts.length - 1] ?? "0");
 
   const comments: Models.Comment[] = [];
   if (commentCount > 0) {
@@ -83,116 +106,59 @@ export async function fileInfoScraper(
       .find("div#comments div.comment-panel div.panel-body")
       .each((_, selection) => {
         const element = $(selection);
+        const avatar = element.find("img.avatar").attr("src");
 
-        // Prefer data-timestamp attribute for reliable timestamp extraction,
-        // fall back to text content of the first child element of the link
-        const timestampEl = element.find("[data-timestamp]");
-        const timestamp = timestampEl.length
-          ? timestampEl.attr("data-timestamp") ?? ""
-          : element.find("a").children().first().text();
-
-        const comment: Models.Comment = {
+        comments.push({
           name: element.find("a").first().text().trim(),
-          content: element
-            .find("div.comment-body div.comment-content")
-            .text(),
-          image:
-            element.find("img.avatar").attr("src") ??
-            Constants.DefaultProfilePic,
-          timestamp,
-        };
-
-        comments.push(comment);
+          content: element.find("div.comment-content").text(),
+          image: resolveUrl(
+            origin,
+            avatar || Constants.DefaultProfilePicPath
+          ),
+          timestamp: element.find("small[data-timestamp]").first().text().trim(),
+        });
       });
   }
 
-  const file: Models.FileInfo = {
-    torrent: torrentData,
-    description: container.find("div.panel-body#torrent-description").text(),
-    submittedBy: container
-      .find("div.panel-body div.row:nth-child(2) .col-md-5:nth-child(2)")
-      .text()
-      .trim(),
-    infoHash: container
-      .find("div.panel-body div.row:nth-child(5) .col-md-5:nth-child(2)")
-      .text()
-      .trim(),
-    commentInfo: {
-      count: commentCount,
-      comments: comments,
-    },
+  const torrentData: Models.Torrent = {
+    title,
+    file: resolveUrl(origin, downloadHref),
+    link: `${origin}/view/${fileId}`,
+    id: fileId,
+    magnet: magnetHref,
+    size: labeledValue($, container, "File size:"),
+    category: labeledValue($, container, "Category:"),
+    uploaded: labeledValue($, container, "Date:"),
+    seeders: toCount(labeledValue($, container, "Seeders:")),
+    leechers: toCount(labeledValue($, container, "Leechers:")),
+    completed: toCount(labeledValue($, container, "Completed:")),
   };
-
-  return file;
-}
-
-/**
- * Scrapes the torrent listing table from a Nyaa search/user page.
- * Returns both the torrent list and pagination info.
- * @param url - The full URL to fetch (already resolved to an available domain)
- * @param currentPage - Current page number for pagination info
- * @param baseUrl - The resolved base URL to use when constructing torrent links
- */
-export async function scrapeNyaa(
-  url: string,
-  currentPage: number,
-  baseUrl: string
-): Promise<Models.TorrentList | null> {
-  const response = await fetch(url, {
-    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-  });
-
-  if (!response.ok) {
-    return null;
-  }
-
-  const responseBody = await response.text();
-  const $ = cheerio.load(responseBody);
-  const table = $("tbody");
-
-  const torrents: Models.Torrent[] = [];
-  table.find("tr").each((_, selection) => {
-    const row = $(selection);
-    const torrentPath =
-      row.find("td:nth-child(2) a").last().attr("href") ?? "";
-    const filePath =
-      row.find("td:nth-child(3) a:nth-child(1)").attr("href") ?? "";
-
-    const idMatch = torrentPath.match(/\/view\/(\d+)/);
-    const id = idMatch ? Number(idMatch[1]) : 0;
-
-    const torrent: Models.Torrent = {
-      id,
-      title: row.find("td:nth-child(2) a").last().text(),
-      link: torrentPath ? baseUrl + torrentPath : null,
-      file: filePath ? baseUrl + filePath : null,
-      category: row.find("td:nth-child(1) a").attr("title") ?? "",
-      size: row.find("td:nth-child(4)").text(),
-      uploaded: row.find("td:nth-child(5)").text(),
-      seeders: safeNumber(row.find("td:nth-child(6)").text()),
-      leechers: safeNumber(row.find("td:nth-child(7)").text()),
-      completed: safeNumber(row.find("td:nth-child(8)").text()),
-      magnet:
-        row.find("td:nth-child(3) a:nth-child(2)").attr("href") ?? null,
-    };
-
-    torrents.push(torrent);
-  });
-
-  // Check if there's a "next" page link in the pagination
-  const hasNextPage = $("ul.pagination li.next:not(.disabled)").length > 0;
 
   return {
-    torrents,
-    pagination: {
-      currentPage,
-      hasNextPage,
+    torrent: torrentData,
+    description: container.find("div.panel-body#torrent-description").text(),
+    submittedBy: labeledValue($, container, "Submitter:"),
+    infoHash,
+    commentInfo: {
+      count: commentCount,
+      comments,
     },
   };
 }
 
-/** Safely parse a string to number, returning 0 for NaN */
-function safeNumber(value: string): number {
-  const n = Number(value);
-  return Number.isNaN(n) ? 0 : n;
+export async function fileInfoScraper(c: Context, path: string) {
+  const result = await fetchNyaa(path);
+  const fileId = extractViewId(path);
+  const file = parseFileInfo(result.html, result.origin, fileId);
+
+  if (!file) {
+    return c.text("Not Found", 404);
+  }
+
+  return c.json(file);
+}
+
+export async function scrapeNyaa(c: Context, path: string) {
+  const result = await fetchNyaa(path);
+  return c.json(parseTorrentList(result.html, result.origin));
 }
