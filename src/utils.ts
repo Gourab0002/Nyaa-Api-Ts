@@ -15,6 +15,25 @@ export function isKnownCategory(category: string): boolean {
   return Object.prototype.hasOwnProperty.call(Constants.NyaaEndpoints, category);
 }
 
+export function isKnownSubcategory(
+  category: string,
+  subcategory: string | undefined
+): boolean {
+  if (subcategory === undefined || subcategory === "") {
+    return true;
+  }
+
+  const endpoints = Constants.NyaaEndpoints[category];
+  return (
+    !!endpoints &&
+    Object.prototype.hasOwnProperty.call(endpoints, subcategory)
+  );
+}
+
+export function normalizeText(value: string): string {
+  return value.replace(/\s+/g, " ").trim();
+}
+
 export function getCategoryID(c: string, s: string | undefined): string {
   const endpoints = Constants.NyaaEndpoints;
   const category = endpoints[c];
@@ -57,13 +76,15 @@ export function getSearchParameters(c: Context): QueryParams {
 
   const order = Constants.ValidOrders.has(oRaw) ? oRaw : "";
   const sort = Constants.ValidSorts.has(s) ? s : "";
+  const filter = f === 1 || f === 2 ? f : 0;
+  const page = Math.min(p > 0 ? p : 1, Constants.MaxPage);
 
   return {
     query: q,
-    page: p > 0 ? p : 1,
+    page,
     order,
     sort,
-    filter: f,
+    filter,
   };
 }
 
@@ -143,70 +164,148 @@ function isChallengePage(html: string): boolean {
   return html.includes("<title>Just a moment...</title>");
 }
 
+function isViewPage(html: string): boolean {
+  return html.includes('id="torrent-description"') || html.includes("Info hash:");
+}
+
 function mirrors(): string[] {
   const urls = [Constants.NyaaBaseUrl, Constants.NyaaAltUrl];
   return [...new Set(urls.filter(Boolean))];
 }
 
-export async function fetchNyaa(path: string): Promise<FetchResult> {
-  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
-  let lastError: unknown;
+type OriginAttempt =
+  | { kind: "ok"; result: FetchResult }
+  | { kind: "not_found" }
+  | { kind: "fail"; error: unknown };
 
-  for (const origin of mirrors()) {
-    const controller = new AbortController();
-    const timeout = setTimeout(
-      () => controller.abort(),
-      Constants.FetchTimeoutMs
-    );
+async function fetchFromOrigin(
+  origin: string,
+  path: string,
+  signal: AbortSignal
+): Promise<OriginAttempt> {
+  try {
+    const response = await fetch(`${origin}${path}`, {
+      headers: {
+        "User-Agent": Constants.UserAgent,
+        Accept: "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+      },
+      redirect: "follow",
+      signal,
+    });
 
-    try {
-      const response = await fetch(`${origin}${normalizedPath}`, {
-        headers: {
-          "User-Agent": Constants.UserAgent,
-          Accept: "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8",
-          "Accept-Language": "en-US,en;q=0.9",
-        },
-        redirect: "follow",
-        signal: controller.signal,
-      });
+    if (response.status === 404) {
+      return { kind: "not_found" };
+    }
 
-      if (response.status === 404) {
-        throw new HttpError(404, "Not Found");
-      }
-
-      if (!response.ok) {
-        lastError = new HttpError(
+    if (!response.ok) {
+      return {
+        kind: "fail",
+        error: new HttpError(
           502,
           `Upstream returned ${response.status} from ${origin}`
-        );
-        continue;
-      }
-
-      const html = await response.text();
-      if (isChallengePage(html)) {
-        lastError = new HttpError(
-          502,
-          `Upstream challenge page from ${origin}`
-        );
-        continue;
-      }
-
-      return { origin, html, status: response.status };
-    } catch (error) {
-      if (error instanceof HttpError && error.status === 404) {
-        throw error;
-      }
-      lastError = error;
-    } finally {
-      clearTimeout(timeout);
+        ),
+      };
     }
+
+    const html = await response.text();
+    if (isChallengePage(html)) {
+      return {
+        kind: "fail",
+        error: new HttpError(502, `Upstream challenge page from ${origin}`),
+      };
+    }
+
+    if (path.startsWith("/view/") && !isViewPage(html)) {
+      return { kind: "not_found" };
+    }
+
+    return { kind: "ok", result: { origin, html, status: response.status } };
+  } catch (error) {
+    return { kind: "fail", error };
+  }
+}
+
+export async function fetchNyaa(path: string): Promise<FetchResult> {
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  const origins = mirrors();
+
+  if (!origins.length) {
+    throw new HttpError(502, "All Nyaa mirrors failed");
   }
 
-  if (lastError instanceof HttpError) {
-    throw lastError;
-  }
+  const controllers = origins.map(() => new AbortController());
+  const timeout = setTimeout(() => {
+    for (const controller of controllers) {
+      controller.abort();
+    }
+  }, Constants.FetchTimeoutMs);
 
-  throw new HttpError(502, "All Nyaa mirrors failed");
+  try {
+    return await new Promise<FetchResult>((resolve, reject) => {
+      let pending = origins.length;
+      let settled = false;
+      let sawNotFound = false;
+      let lastError: unknown;
+
+      const finishIfComplete = () => {
+        if (settled) {
+          return;
+        }
+
+        pending -= 1;
+        if (pending > 0) {
+          return;
+        }
+
+        settled = true;
+        if (sawNotFound) {
+          reject(new HttpError(404, "Not Found"));
+          return;
+        }
+        if (lastError instanceof HttpError) {
+          reject(lastError);
+          return;
+        }
+        reject(new HttpError(502, "All Nyaa mirrors failed"));
+      };
+
+      for (let i = 0; i < origins.length; i += 1) {
+        fetchFromOrigin(origins[i], normalizedPath, controllers[i].signal)
+          .then((attempt) => {
+            if (settled) {
+              return;
+            }
+
+            if (attempt.kind === "ok") {
+              settled = true;
+              for (const controller of controllers) {
+                controller.abort();
+              }
+              resolve(attempt.result);
+              return;
+            }
+
+            if (attempt.kind === "not_found") {
+              sawNotFound = true;
+            } else {
+              lastError = attempt.error;
+            }
+
+            finishIfComplete();
+          })
+          .catch((error) => {
+            if (settled) {
+              return;
+            }
+            lastError = error;
+            finishIfComplete();
+          });
+      }
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 export function errorStatus(error: unknown): ErrorStatus {
@@ -222,9 +321,6 @@ export function errorMessage(error: unknown): string {
   }
   if (error instanceof Error && error.name === "AbortError") {
     return "Upstream timeout";
-  }
-  if (error instanceof Error && error.message) {
-    return error.message;
   }
   return "Upstream error";
 }

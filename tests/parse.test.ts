@@ -7,8 +7,10 @@ import {
   getCategoryID,
   getSearchParameters,
   isKnownCategory,
+  isKnownSubcategory,
   isValidId,
   isValidUsername,
+  normalizeText,
   resolveUrl,
   toCount,
 } from "../src/utils.ts";
@@ -182,6 +184,10 @@ test("parseFileInfo returns null for empty markup", () => {
 test("category helpers accept documented software/application alias", () => {
   assert.equal(isKnownCategory("software"), true);
   assert.equal(isKnownCategory("id"), false);
+  assert.equal(isKnownSubcategory("anime", undefined), true);
+  assert.equal(isKnownSubcategory("anime", "eng"), true);
+  assert.equal(isKnownSubcategory("anime", "nope"), false);
+  assert.equal(isKnownSubcategory("software", "application"), true);
   assert.equal(getCategoryID("software", "application"), "6_1");
   assert.equal(getCategoryID("software", "applications"), "6_1");
   assert.equal(getCategoryID("software", undefined), "6_0");
@@ -234,6 +240,20 @@ test("getSearchParameters defaults NaN-safe values and accepts filter alias", ()
   assert.equal(params.order, "");
 });
 
+test("getSearchParameters clamps invalid filters and huge page numbers", () => {
+  const c = {
+    req: {
+      query: (key: string) =>
+        ({ f: "9", p: "99999" } as Record<string, string>)[key],
+    },
+  };
+
+  const params = getSearchParameters(c as never);
+
+  assert.equal(params.filter, 0);
+  assert.equal(params.page, 1000);
+});
+
 test("url and number helpers", () => {
   assert.equal(resolveUrl("https://nyaa.land", "/view/1"), "https://nyaa.land/view/1");
   assert.equal(resolveUrl("https://nyaa.land", "magnet:?xt=1"), "magnet:?xt=1");
@@ -242,4 +262,9 @@ test("url and number helpers", () => {
   assert.equal(toCount(""), 0);
   assert.equal(extractViewId("/view/2148063#comments"), 2148063);
   assert.equal(extractViewId("nope"), 0);
+  assert.equal(normalizeText("  Comments  \n  -  1  "), "Comments - 1");
+});
+
+test("parseFileInfo returns null for listing markup", () => {
+  assert.equal(parseFileInfo(LISTING_HTML, "https://nyaa.land", 1), null);
 });

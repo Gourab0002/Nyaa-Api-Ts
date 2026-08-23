@@ -52,7 +52,7 @@ export class Handlers {
       const cat = c.req.param("category") ?? "";
       const subCat = c.req.param("subcategory");
 
-      if (!Utils.isKnownCategory(cat)) {
+      if (!Utils.isKnownCategory(cat) || !Utils.isKnownSubcategory(cat, subCat)) {
         return c.text("Invalid category", 400);
       }
 

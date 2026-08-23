@@ -4,6 +4,7 @@ export class Constants {
   static UserAgent: string =
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36";
   static FetchTimeoutMs: number = 15000;
+  static MaxPage: number = 1000;
   static DefaultProfilePicPath: string = "/static/img/avatar/default.png";
 
   static NyaaEndpoints: Record<string, Record<string, string>> = {

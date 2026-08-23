@@ -5,6 +5,7 @@ import * as Models from "./models.ts";
 import {
   extractViewId,
   fetchNyaa,
+  normalizeText,
   resolveUrl,
   toCount,
 } from "./utils.ts";
@@ -15,9 +16,9 @@ function labeledValue(
   label: string
 ): string {
   const match = scope.find("div.row > div").filter((_, el) => {
-    return $(el).text().replace(/\s+/g, " ").trim() === label;
+    return normalizeText($(el).text()) === label;
   });
-  return match.first().next().text().replace(/\s+/g, " ").trim();
+  return normalizeText(match.first().next().text());
 }
 
 export function parseTorrentList(
@@ -52,13 +53,13 @@ export function parseTorrentList(
 
     torrents.push({
       id,
-      title: titleLink.text().trim(),
+      title: normalizeText(titleLink.text()),
       link: resolveUrl(origin, torrentPath),
       file: resolveUrl(origin, downloadHref),
       magnet: magnetHref ?? "",
       category: row.find("td:first-child a").attr("title") ?? "",
-      size: last >= 5 ? cells.eq(last - 5).text().trim() : "",
-      uploaded: last >= 4 ? cells.eq(last - 4).text().trim() : "",
+      size: last >= 5 ? normalizeText(cells.eq(last - 5).text()) : "",
+      uploaded: last >= 4 ? normalizeText(cells.eq(last - 4).text()) : "",
       seeders: last >= 3 ? toCount(cells.eq(last - 3).text()) : 0,
       leechers: last >= 2 ? toCount(cells.eq(last - 2).text()) : 0,
       completed: last >= 1 ? toCount(cells.eq(last - 1).text()) : 0,
@@ -80,11 +81,9 @@ export function parseFileInfo(
     return null;
   }
 
-  const title = container
-    .find(".panel-heading h3.panel-title")
-    .first()
-    .text()
-    .trim();
+  const title = normalizeText(
+    container.find(".panel-heading h3.panel-title").first().text()
+  );
 
   if (!title) {
     return null;
@@ -109,13 +108,15 @@ export function parseFileInfo(
         const avatar = element.find("img.avatar").attr("src");
 
         comments.push({
-          name: element.find("a").first().text().trim(),
-          content: element.find("div.comment-content").text(),
+          name: normalizeText(element.find("a").first().text()),
+          content: element.find("div.comment-content").text().trim(),
           image: resolveUrl(
             origin,
             avatar || Constants.DefaultProfilePicPath
           ),
-          timestamp: element.find("small[data-timestamp]").first().text().trim(),
+          timestamp: normalizeText(
+            element.find("small[data-timestamp]").first().text()
+          ),
         });
       });
   }

@@ -1,16 +1,13 @@
 name: Deploy on workers.dev
 
 on:
-  push:
-    branches:
-      - develop
   workflow_dispatch:
-  repository_dispatch:
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
     name: Deploy
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -19,8 +16,9 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Publish API
-        uses: cloudflare/wrangler-action@2.0.0
+        uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CF_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: "3.80.0"
           command: deploy

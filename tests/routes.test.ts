@@ -32,6 +32,12 @@ test("GET /:category rejects unknown categories", async () => {
   assert.equal(await res.text(), "Invalid category");
 });
 
+test("GET /:category/:subcategory rejects unknown subcategories", async () => {
+  const res = await app.request("/anime/nope");
+  assert.equal(res.status, 400);
+  assert.equal(await res.text(), "Invalid category");
+});
+
 test("GET /id/:id maps upstream 404 to 404", async () => {
   globalThis.fetch = (async () =>
     new Response("missing", { status: 404 })) as typeof fetch;
@@ -51,6 +57,44 @@ test("GET /anime maps upstream failures to 502 after trying both mirrors", async
   const res = await app.request("/anime");
   assert.equal(res.status, 502);
   assert.equal(calls, 2);
+});
+
+test("GET /id/:id treats a listing page from a mirror as not found", async () => {
+  globalThis.fetch = (async () =>
+    new Response(
+      `<html><title>Browse :: Nyaa</title><table class="table torrent-list"><tbody></tbody></table></html>`,
+      { status: 200 }
+    )) as typeof fetch;
+
+  const res = await app.request("/id/123");
+  assert.equal(res.status, 404);
+  assert.equal(await res.text(), "Not Found");
+});
+
+test("GET /anime uses a working mirror without waiting for a hung primary", async () => {
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.includes("nyaa.si")) {
+      return new Promise((_, reject) => {
+        const abort = () =>
+          reject(Object.assign(new Error("aborted"), { name: "AbortError" }));
+        if (init?.signal?.aborted) {
+          abort();
+          return;
+        }
+        init?.signal?.addEventListener("abort", abort, { once: true });
+      });
+    }
+
+    return new Response(
+      `<table class="table torrent-list"><tbody></tbody></table>`,
+      { status: 200 }
+    );
+  }) as typeof fetch;
+
+  const res = await app.request("/anime");
+  assert.equal(res.status, 200);
+  assert.deepEqual(await res.json(), []);
 });
 
 test("GET /search is an alias for browsing all categories", async () => {
