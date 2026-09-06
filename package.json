@@ -24,7 +24,7 @@
     "url": "https://github.com/Gourab0002/Nyaa-Api-Ts.git"
   },
   "devDependencies": {
-    "tsx": "^4.19.0",
+    "tsx": "^4.23.13",
     "typescript": "^7.0.2",
     "wrangler": "^4.125.0"
   },
