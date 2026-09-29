@@ -26,10 +26,10 @@
   "devDependencies": {
     "tsx": "^4.19.0",
     "typescript": "^7.0.2",
-    "wrangler": "^4.125.0"
+    "wrangler": "^4.143.1"
   },
   "dependencies": {
     "cheerio": "^1.0.0",
-    "hono": "^4.12.21"
+    "hono": "^4.13.5"
   }
 }
